@@ -43,15 +43,6 @@ python Eval/main/CMIP.py
 bash Eval/data_distribution/bash_eval.sh
 ```
 
----
-
-## 🏋️ Training
-
-To train the constructive model:
-
-```bash
-python run/train_constructive.py
-```
 
 --- 
 
@@ -142,6 +133,18 @@ print(f"Outputs close: {is_close}")
 
 ```
 ---
+
+
+---
+
+## 🏋️ Training
+
+To train the constructive model:
+
+```bash
+python run/train_constructive.py
+```
+![Pipeline](img/train.png)
 
 ## 🙏 Acknowledgements
 
