@@ -1,14 +1,16 @@
 import torch
 
 
-def compute_in_batches(f, calc_batch_size, *args, n=None):
+def compute_in_batches(f, calc_batch_size: int, *args, n: int = None):
     """
-    Computes memory heavy function f(*args) in batches
-    :param n: the total number of elements, optional if it cannot be determined as args[0].size(0)
-    :param f: The function that is computed, should take only tensors as arguments and return tensor or tuple of tensors
-    :param calc_batch_size: The batch size to use when computing this function
-    :param args: Tensor arguments with equally sized first batch dimension
-    :return: f(*args), this should be one or multiple tensors with equally sized first batch dimension
+    Computes memory heavy function f(*args) in batches.
+    Args:
+        f: The function to compute, should take only tensors as arguments and return tensor or tuple of tensors
+        calc_batch_size: The batch size to use when computing this function
+        *args: Tensor arguments with equally sized first batch dimension
+        n: The total number of elements, optional if it cannot be determined as args[0].size(0)
+    Returns:
+        f(*args), this should be one or multiple tensors with equally sized first batch dimension
     """
     if n is None:
         n = args[0].size(0)
@@ -19,10 +21,21 @@ def compute_in_batches(f, calc_batch_size, *args, n=None):
     # Run all batches
     # all_res = [f(*batch_args) for batch_args in zip(*[torch.chunk(arg, n_batches) for arg in args])]
     # We do not use torch.chunk such that it also works for other classes that support slicing
-    all_res = [f(*(arg[i * calc_batch_size:(i + 1) * calc_batch_size] for arg in args)) for i in range(n_batches)]
+    all_res = [
+        f(*(arg[i * calc_batch_size : (i + 1) * calc_batch_size] for arg in args))
+        for i in range(n_batches)
+    ]
 
     # Allow for functions that return None
-    def safe_cat(chunks, dim=0):
+    def safe_cat(chunks, dim: int = 0):
+        """
+        Safely concatenate a list of tensors, handling None values.
+        Args:
+            chunks: List of tensors or None
+            dim: Dimension to concatenate along
+        Returns:
+            Concatenated tensor or None
+        """
         if chunks[0] is None:
             assert all(chunk is None for chunk in chunks)
             return None

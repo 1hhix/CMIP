@@ -2,17 +2,21 @@ import torch
 from torch import nn
 
 
+"""
+Sinusoidal positional encoding module for transformer models in CMIP.
+"""
+
 class PostionalEncoding(nn.Module):
     """
-    compute sinusoid encoding.
+    Compute sinusoidal positional encoding for input sequences.
     """
 
-    def __init__(self, d_model, max_len):
+    def __init__(self, d_model: int, max_len: int):
         """
-        constructor of sinusoid encoding class
-        :param d_model: dimension of model
-        :param max_len: max sequence length
-        :param device: hardware device setting
+        Constructor for sinusoidal encoding class.
+        Args:
+            d_model: Dimension of model/embedding
+            max_len: Maximum sequence length
         """
         super(PostionalEncoding, self).__init__()
 
@@ -32,7 +36,15 @@ class PostionalEncoding(nn.Module):
         self.encoding[:, 1::2] = torch.cos(pos / (10000 ** (_2i / d_model)))
         # compute positional encoding to consider positional information of words
 
-    def forward(self, batch_size, seq_len):
+    def forward(self, batch_size: int, seq_len: int) -> torch.Tensor:
+        """
+        Get positional encoding for a batch of sequences.
+        Args:
+            batch_size: Batch size (unused, for API compatibility)
+            seq_len: Sequence length
+        Returns:
+            Positional encoding tensor of shape (seq_len, d_model)
+        """
         # self.encoding
         # [max_len = 512, d_model = 512]
 

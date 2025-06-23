@@ -8,11 +8,9 @@ import random
 
 class ReversibleBlock(nn.Module):
     """
-    Elementary building block for building (partially) reversible architectures
-
-    Implementation of the Reversible block described in the RevNet paper
-    (https://arxiv.org/abs/1707.04585). Must be used inside a :class:`revtorch.ReversibleSequence`
-    for autograd support.
+    Elementary building block for building (partially) reversible architectures.
+    Implements the Reversible block described in the RevNet paper (https://arxiv.org/abs/1707.04585).
+    Must be used inside a ReversibleSequence for autograd support.
 
     Arguments:
         f_block (nn.Module): arbitrary subnetwork whos output shape is equal to its input shape
@@ -21,7 +19,7 @@ class ReversibleBlock(nn.Module):
         fix_random_seed (boolean): Use the same random seed for the forward and backward pass if set to true 
     """
 
-    def __init__(self, f_block, g_block, split_along_dim=1, fix_random_seed=False):
+    def __init__(self, f_block: nn.Module, g_block: nn.Module, split_along_dim: int = 1, fix_random_seed: bool = False):
         super(ReversibleBlock, self).__init__()
         self.f_block = f_block
         self.g_block = g_block
@@ -29,25 +27,28 @@ class ReversibleBlock(nn.Module):
         self.fix_random_seed = fix_random_seed
         self.random_seeds = {}
 
-    def _init_seed(self, namespace):
+    def _init_seed(self, namespace: str) -> None:
+        """Initialize random seed for reproducibility if fix_random_seed is set."""
         if self.fix_random_seed:
             self.random_seeds[namespace] = random.randint(0, sys.maxsize)
             self._set_seed(namespace)
 
-    def _set_seed(self, namespace):
+    def _set_seed(self, namespace: str) -> None:
+        """Set the random seed for reproducibility if fix_random_seed is set."""
         if self.fix_random_seed:
             torch.manual_seed(self.random_seeds[namespace])
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Performs the forward pass of the reversible block. Does not record any gradients.
-        :param x: Input tensor. Must be splittable along dimension 1.
-        :return: Output tensor of the same shape as the input tensor
+        Args:
+            x: Input tensor. Must be splittable along dimension 1.
+        Returns:
+            Output tensor of the same shape as the input tensor
         """
         x1, x2 = torch.chunk(x, 2, dim=self.split_along_dim)
         y1, y2 = None, None
 
- 
         with torch.no_grad():
             self._init_seed("f")
             y1 = x1 + self.f_block(x2)
@@ -56,17 +57,17 @@ class ReversibleBlock(nn.Module):
 
         return torch.cat([y1, y2], dim=self.split_along_dim)
 
-    def backward_pass(self, y, dy, retain_graph):
+    def backward_pass(self, y: torch.Tensor, dy: torch.Tensor, retain_graph: bool) -> tuple:
         """
         Performs the backward pass of the reversible block.
-
         Calculates the derivatives of the block's parameters in f_block and g_block, as well as the inputs of the
         forward pass and its gradients.
-
-        :param y: Outputs of the reversible block
-        :param dy: Derivatives of the outputs
-        :param retain_graph: Whether to retain the graph on intercepted backwards
-        :return: A tuple of (block input, block input derivatives). The block inputs are the same shape as the block outptus.
+        Args:
+            y: Outputs of the reversible block
+            dy: Derivatives of the outputs
+            retain_graph: Whether to retain the graph on intercepted backwards
+        Returns:
+            A tuple of (block input, block input derivatives). The block inputs are the same shape as the block outputs.
         """
 
         # Split the arguments channel-wise
@@ -135,17 +136,19 @@ class ReversibleBlock(nn.Module):
 
 class _ReversibleModuleFunction(torch.autograd.function.Function):
     """
-    Integrates the reversible sequence into the autograd framework
+    Integrates the reversible sequence into the autograd framework.
     """
 
     @staticmethod
-    def forward(ctx, x, reversible_blocks, eagerly_discard_variables):
+    def forward(ctx, x: torch.Tensor, reversible_blocks: nn.ModuleList, eagerly_discard_variables: bool) -> torch.Tensor:
         """
-        Performs the forward pass of a reversible sequence within the autograd framework
-        :param ctx: autograd context
-        :param x: input tensor
-        :param reversible_blocks: nn.Modulelist of reversible blocks
-        :return: output tensor
+        Performs the forward pass of a reversible sequence within the autograd framework.
+        Args:
+            ctx: autograd context
+            x: input tensor
+            reversible_blocks: nn.ModuleList of reversible blocks
+        Returns:
+            output tensor
         """
         assert isinstance(reversible_blocks, nn.ModuleList)
         for block in reversible_blocks:
@@ -159,12 +162,14 @@ class _ReversibleModuleFunction(torch.autograd.function.Function):
         return x
 
     @staticmethod
-    def backward(ctx, dy):
+    def backward(ctx, dy: torch.Tensor):
         """
-        Performs the backward pass of a reversible sequence within the autograd framework
-        :param ctx: autograd context
-        :param dy: derivatives of the outputs
-        :return: derivatives of the inputs
+        Performs the backward pass of a reversible sequence within the autograd framework.
+        Args:
+            ctx: autograd context
+            dy: derivatives of the outputs
+        Returns:
+            derivatives of the inputs
         """
         y = ctx.y
         if ctx.eagerly_discard_variables:
@@ -180,11 +185,10 @@ class _ReversibleModuleFunction(torch.autograd.function.Function):
 
 class ReversibleSequence(nn.Module):
     """
-    Basic building element for (partially) reversible networks
-
-    A reversible sequence is a sequence of arbitrarly many reversible blocks. The entire sequence is reversible.
+    Basic building element for (partially) reversible networks.
+    A reversible sequence is a sequence of arbitrarily many reversible blocks. The entire sequence is reversible.
     The activations are only saved at the end of the sequence. Backpropagation leverages the reversible nature of
-    the reversible sequece to save memory.
+    the reversible sequence to save memory.
 
     Arguments:
         reversible_blocks (nn.ModuleList): A ModuleList that exclusivly contains instances of ReversibleBlock
@@ -193,7 +197,7 @@ class ReversibleSequence(nn.Module):
 		calculating the gradient and therefore saves memory. Disable if you call backward() multiple times.
     """
 
-    def __init__(self, reversible_blocks, eagerly_discard_variables=True):
+    def __init__(self, reversible_blocks: nn.ModuleList, eagerly_discard_variables: bool = True):
         super(ReversibleSequence, self).__init__()
         assert isinstance(reversible_blocks, nn.ModuleList)
         for block in reversible_blocks:
@@ -202,11 +206,13 @@ class ReversibleSequence(nn.Module):
         self.reversible_blocks = reversible_blocks
         self.eagerly_discard_variables = eagerly_discard_variables
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass of a reversible sequence
-        :param x: Input tensor
-        :return: Output tensor
+        Forward pass of a reversible sequence.
+        Args:
+            x: Input tensor
+        Returns:
+            Output tensor
         """
         x = _ReversibleModuleFunction.apply(
             x, self.reversible_blocks, self.eagerly_discard_variables

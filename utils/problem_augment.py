@@ -1,6 +1,18 @@
+"""
+Data augmentation utilities for TSP/mTSP problems, including 8-fold and N-fold geometric augmentations.
+"""
 import torch
 import math
-def augment_xy_data_by_8_fold(problems):
+
+
+def augment_xy_data_by_8_fold(problems: torch.Tensor) -> torch.Tensor:
+    """
+    Augment a batch of 2D problems by 8-fold geometric transformations (rotations and reflections).
+    Args:
+        problems: Tensor of shape (batch, problem, 2)
+    Returns:
+        Augmented tensor of shape (8*batch, problem, 2)
+    """
     # problems.shape: (batch, problem, 2)
 
     x = problems[:, :, [0]]
@@ -22,7 +34,16 @@ def augment_xy_data_by_8_fold(problems):
     return aug_problems
 
 
-def augment_xy_data_by_N_fold(problems, N, depot=None):
+def augment_xy_data_by_N_fold(problems: torch.Tensor, N: int, depot: torch.Tensor = None):
+    """
+    Augment a batch of 2D problems by N-fold random geometric transformations.
+    Args:
+        problems: Tensor of shape (batch, problem, 2)
+        N: Number of augmentations
+        depot: Optional tensor of depot locations
+    Returns:
+        Augmented problems (and depot if provided)
+    """
     x = problems[:, :, [0]]
     y = problems[:, :, [1]]
 
@@ -43,7 +64,16 @@ def augment_xy_data_by_N_fold(problems, N, depot=None):
     return problems
 
 
-def SR_transform(x, y, idx):
+def SR_transform(x: torch.Tensor, y: torch.Tensor, idx: float) -> torch.Tensor:
+    """
+    Apply a random rotation/reflection transformation to x, y coordinates.
+    Args:
+        x: Tensor of x coordinates
+        y: Tensor of y coordinates
+        idx: Random float in [0, 1) controlling the transformation
+    Returns:
+        Transformed coordinates as a tensor
+    """
     if idx < 0.5:
         phi = idx * 4 * math.pi
     else:
@@ -62,16 +92,27 @@ def SR_transform(x, y, idx):
     return dat
 
 
-def augment(input, N_aug=8):
+def augment(input, N_aug: int = 8):
+    """
+    Augment input data (dict or tensor) using 8-fold or N-fold augmentation.
+    Args:
+        input: dict with 'loc' and 'depot' or a tensor
+        N_aug: Number of augmentations (default 8)
+    Returns:
+        Augmented input
+    """
 
-    if isinstance(input, dict):  
+    if isinstance(input, dict):
         if N_aug == 8:
-            input['loc'], input['depot'] = augment_xy_data_by_8_fold(input['loc']),  augment_xy_data_by_8_fold(input['depot'].view(-1, 1, 2))
+            input["loc"], input["depot"] = (
+                augment_xy_data_by_8_fold(input["loc"]),
+                augment_xy_data_by_8_fold(input["depot"].view(-1, 1, 2)),
+            )
         else:
-            input = input = augment_xy_data_by_N_fold(input['loc'], N, input['depot'])    
+            input = augment_xy_data_by_N_fold(input["loc"], N_aug, input["depot"])
     else:
         if N_aug == 8:
             input = augment_xy_data_by_8_fold(input)
         else:
-            input = augment_xy_data_by_N_fold(input, N_aug) 
+            input = augment_xy_data_by_N_fold(input, N_aug)
     return input

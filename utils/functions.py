@@ -7,43 +7,46 @@ import json
 from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import Pool
-import torch.nn.functional as F 
+import torch.nn.functional as F
 
-def load_problem(name):
-    from problems import MTSP 
-    problem = {
-        'mtsp': MTSP, 
-    }.get(name, None)
+
+def load_problem(name: str):
+    """Return the problem class for a given problem name."""
+    from problems import MTSP
+
+    problem = {"mtsp": MTSP}.get(name, None)
     assert problem is not None, "Currently unsupported problem: {}!".format(name)
     return problem
 
 
-def torch_load_cpu(load_path):
-    return torch.load(load_path, map_location=lambda storage, loc: storage)  # Load on CPU
+def torch_load_cpu(load_path: str) -> dict:
+    """Load a torch object from file, always mapping to CPU."""
+    return torch.load(
+        load_path, map_location=lambda storage, loc: storage
+    )  # Load on CPU
 
 
 def move_to(var, device):
+    """Recursively move a tensor or a collection of tensors to the specified device."""
     if isinstance(var, dict):
         return {k: move_to(v, device) for k, v in var.items()}
     return var.to(device)
 
 
-def _load_model_file(load_path, model):
-    """Loads the model with parameters from the file and returns optimizer state dict if it is in the file"""
+def _load_model_file(load_path: str, model) -> tuple:
+    """Loads the model with parameters from the file and returns optimizer state dict if it is in the file."""
 
     # Load the model parameters from a saved state
     load_optimizer_state_dict = None
-    print('  [*] Loading model from {}'.format(load_path))
+    print("  [*] Loading model from {}".format(load_path))
 
     load_data = torch.load(
-        os.path.join(
-            os.getcwd(),
-            load_path
-        ), map_location=lambda storage, loc: storage)
+        os.path.join(os.getcwd(), load_path), map_location=lambda storage, loc: storage
+    )
 
     if isinstance(load_data, dict):
-        load_optimizer_state_dict = load_data.get('optimizer', None)
-        load_model_state_dict = load_data.get('model', load_data)
+        load_optimizer_state_dict = load_data.get("optimizer", None)
+        load_model_state_dict = load_data.get("model", load_data)
     else:
         load_model_state_dict = load_data.state_dict()
 
@@ -56,22 +59,25 @@ def _load_model_file(load_path, model):
     return model, load_optimizer_state_dict
 
 
-def load_args(filename):
-    with open(filename, 'r') as f:
+def load_args(filename: str) -> dict:
+    """Load arguments from a JSON file, with backward compatibility for older formats."""
+    with open(filename, "r") as f:
         args = json.load(f)
 
     # Backwards compatibility
-    if 'data_distribution' not in args:
-        args['data_distribution'] = None
-        probl, *dist = args['problem'].split("_")
+    if "data_distribution" not in args:
+        args["data_distribution"] = None
+        probl, *dist = args["problem"].split("_")
         if probl == "op":
-            args['problem'] = probl
-            args['data_distribution'] = dist[0]
+            args["problem"] = probl
+            args["data_distribution"] = dist[0]
     return args
 
 
-def load_model(path, agent_num=3, epoch=None):  
-    from nets.constructive.model import CM 
+def load_model(path: str, agent_num: int = 3, epoch: int = None):
+    """Load a model and its arguments from a given path and epoch."""
+    from nets.constructive.model import CM
+
     if os.path.isfile(path):
         model_filename = path
         path = os.path.dirname(model_filename)
@@ -80,48 +86,50 @@ def load_model(path, agent_num=3, epoch=None):
             epoch = max(
                 int(os.path.splitext(filename)[0].split("-")[1])
                 for filename in os.listdir(path)
-                if os.path.splitext(filename)[1] == '.pt'
+                if os.path.splitext(filename)[1] == ".pt"
             )
-        model_filename = os.path.join(path, 'epoch-{}.pt'.format(epoch))
+        model_filename = os.path.join(path, "epoch-{}.pt".format(epoch))
     else:
         assert False, "{} is not a valid directory or file".format(path)
 
-    args = load_args(os.path.join(path, 'args.json'))
-    problem = load_problem(args['problem'])  
+    args = load_args(os.path.join(path, "args.json"))
+    problem = load_problem(args["problem"])
     model = CM(
-        args['embedding_dim'],
-        args['hidden_dim'],
+        args["embedding_dim"],
+        args["hidden_dim"],
         problem,
-        agent_num = agent_num,
-        n_encode_layers=args['n_encode_layers'],
+        agent_num=agent_num,
+        n_encode_layers=args["n_encode_layers"],
         mask_inner=True,
-        mask_logits=True, 
-        tanh_clipping=args['tanh_clipping'], 
-        shrink_size=args.get('shrink_size', None), 
-        num_node=args['graph_size'], 
-        use_circle=args['usecircle'],
-        use_gate=args['usegate']
+        mask_logits=True,
+        tanh_clipping=args["tanh_clipping"],
+        shrink_size=args.get("shrink_size", None),
+        num_node=args["graph_size"],
+        use_circle=args["usecircle"],
+        use_gate=args["usegate"],
     )
-    model.use_local=args.get('use_local', 'False')
+    model.use_local = args.get("use_local", "False")
     # Overwrite model parameters by parameters to load
     load_data = torch_load_cpu(model_filename)
-    model.load_state_dict({**model.state_dict(), **load_data.get('model', {})})
+    model.load_state_dict({**model.state_dict(), **load_data.get("model", {})})
 
     model, *_ = _load_model_file(model_filename, model)
 
     # model.eval()  # Put in eval mode
-    
+
     return model, args
 
 
-def parse_softmax_temperature(raw_temp):
+def parse_softmax_temperature(raw_temp: str) -> float:
+    """Parse the softmax temperature from a file or string value."""
     # Load from file
     if os.path.isfile(raw_temp):
         return np.loadtxt(raw_temp)[-1, 0]
     return float(raw_temp)
 
 
-def run_all_in_pool(func, directory, dataset, opts, use_multiprocessing=True):
+def run_all_in_pool(func, directory: str, dataset: list, opts, use_multiprocessing: bool = True):
+    """Run a function over a dataset in parallel using multiprocessing or threading."""
     # # Test
     # res = func((directory, 'test', *dataset[0]))
     # return [res]
@@ -129,30 +137,33 @@ def run_all_in_pool(func, directory, dataset, opts, use_multiprocessing=True):
     num_cpus = os.cpu_count() if opts.cpus is None else opts.cpus
 
     w = len(str(len(dataset) - 1))
-    offset = getattr(opts, 'offset', None)
+    offset = getattr(opts, "offset", None)
     if offset is None:
         offset = 0
-    ds = dataset[offset:(offset + opts.n if opts.n is not None else len(dataset))]
-    pool_cls = (Pool if use_multiprocessing and num_cpus > 1 else ThreadPool)
+    ds = dataset[offset : (offset + opts.n if opts.n is not None else len(dataset))]
+    pool_cls = Pool if use_multiprocessing and num_cpus > 1 else ThreadPool
     with pool_cls(num_cpus) as pool:
-        results = list(tqdm(pool.imap(
-            func,
-            [
-                (
-                    directory,
-                    str(i + offset).zfill(w),
-                    *problem
-                )
-                for i, problem in enumerate(ds)
-            ]
-        ), total=len(ds), mininterval=opts.progress_bar_mininterval))
+        results = list(
+            tqdm(
+                pool.imap(
+                    func,
+                    [
+                        (directory, str(i + offset).zfill(w), *problem)
+                        for i, problem in enumerate(ds)
+                    ],
+                ),
+                total=len(ds),
+                mininterval=opts.progress_bar_mininterval,
+            )
+        )
 
     failed = [str(i + offset) for i, res in enumerate(results) if res is None]
     assert len(failed) == 0, "Some instances failed: {}".format(" ".join(failed))
     return results, num_cpus
 
 
-def do_batch_rep(v, n):
+def do_batch_rep(v, n: int):
+    """Repeat a batch of data n times, supporting dict, list, tuple, or tensor."""
     if isinstance(v, dict):
         return {k: do_batch_rep(v_, n) for k, v_ in v.items()}
     elif isinstance(v, list):
@@ -163,7 +174,8 @@ def do_batch_rep(v, n):
     return v[None, ...].expand(n, *v.size()).contiguous().view(-1, *v.size()[1:])
 
 
-def sample_many_ver2(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, aug=8):
+def sample_many_ver2(inner_func, get_cost_func, input, batch_rep: int = 1, iter_rep: int = 1, aug: int = 8):
+    """Sample multiple solutions and return the best (lowest cost) one for each batch using version 2 logic."""
     """
     :param input: (batch_size, graph_size, node_dim) input node features
     :return:
@@ -175,7 +187,10 @@ def sample_many_ver2(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, 
     pis = []
     # print(iter_rep)
     for i in range(iter_rep):
-        new_input = (input[0][i * batch_rep:(i+1) *batch_rep,:,:], input[1][i * batch_rep:(i+1) *batch_rep,:,:])
+        new_input = (
+            input[0][i * batch_rep : (i + 1) * batch_rep, :, :],
+            input[1][i * batch_rep : (i + 1) * batch_rep, :, :],
+        )
         _log_p, pi, cost = inner_func(new_input)
         pi.view(-1, batch_rep, pi.size(-1))
         costs.append(cost.view(batch_rep, -1).t())
@@ -183,10 +198,7 @@ def sample_many_ver2(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, 
 
     max_length = max(pi.size(-1) for pi in pis)
     # (batch_size * batch_rep, iter_rep, max_length) => (batch_size, batch_rep * iter_rep, max_length)
-    pis = torch.cat(
-        [F.pad(pi, (0, max_length - pi.size(-1))) for pi in pis],
-        1
-    )  
+    pis = torch.cat([F.pad(pi, (0, max_length - pi.size(-1))) for pi in pis], 1)
     # .view(embeddings.size(0), batch_rep * iter_rep, max_length)
     costs = torch.cat(costs, 1)
 
@@ -197,7 +209,9 @@ def sample_many_ver2(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, 
 
     return minpis, mincosts
 
-def sample_many(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, aug=8):
+
+def sample_many(inner_func, get_cost_func, input, batch_rep: int = 1, iter_rep: int = 1, aug: int = 8):
+    """Sample multiple solutions and return the best (lowest cost) one for each batch."""
     """
     :param input: (batch_size, graph_size, node_dim) input node features
     :return:
@@ -206,19 +220,21 @@ def sample_many(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, aug=8
     input = do_batch_rep(input, batch_rep)
     _, pi, length_all = inner_func(input)
     cost = torch.max(length_all, dim=-1)[0]
-    mincost, idx = cost.view(N* batch_rep, -1).min(0, keepdim=True)
-    pi = pi.view(N*batch_rep, -1, pi.size(-1))
+    mincost, idx = cost.view(N * batch_rep, -1).min(0, keepdim=True)
+    pi = pi.view(N * batch_rep, -1, pi.size(-1))
     num_elements = idx.numel()
 
     # Create a tensor of indices using torch.arange()
     indices = torch.arange(num_elements, device=mincost.device)
-    minpi = pi[idx.squeeze(0),indices,:]
+    minpi = pi[idx.squeeze(0), indices, :]
     mincost = mincost.squeeze(0)
     minpi = minpi.squeeze(0)
 
     return minpi, mincost
 
-def sample_many_ver3(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, aug=8):
+
+def sample_many_ver3(inner_func, get_cost_func, input, batch_rep: int = 1, iter_rep: int = 1, aug: int = 8):
+    """Sample multiple solutions and return the best (lowest cost) one for each batch using version 3 logic."""
     """
     :param input: (batch_size, graph_size, node_dim) input node features
     :return:
@@ -228,11 +244,11 @@ def sample_many_ver3(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, 
     costs = []
     pis = []
     for i in range(iter_rep):
-        
+
         # new_input = (input[0][i * batch_rep:(i+1) *batch_rep,:,:], input[1][i * batch_rep:(i+1) *batch_rep,:,:])
         _log_p, pi, cost = inner_func(input)
         # _log_p, pi = inner_func(input)
-        pi.view(-1, batch_rep* N, pi.size(-1))
+        pi.view(-1, batch_rep * N, pi.size(-1))
         # cost, mask = get_cost_func(input, pi)
         costs.append(cost.view(batch_rep * N, -1).t())
         pis.append(pi.view(batch_rep * N, -1, pi.size(-1)).transpose(0, 1))
@@ -240,8 +256,7 @@ def sample_many_ver3(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1, 
     max_length = max(pi.size(-1) for pi in pis)
     # (batch_size * batch_rep, iter_rep, max_length) => (batch_size, batch_rep * iter_rep, max_length)
     pis = torch.cat(
-        [F.pad(pi, (0, max_length - pi.size(-1))) for pi in pis],
-        1
+        [F.pad(pi, (0, max_length - pi.size(-1))) for pi in pis], 1
     )  # .view(embeddings.size(0), batch_rep * iter_rep, max_length)
     costs = torch.cat(costs, 1)
 

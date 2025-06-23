@@ -2,7 +2,15 @@ import torch
 import numpy as np
 
 
-def torch_lexsort(keys, dim=-1):
+def torch_lexsort(keys, dim: int = -1) -> torch.Tensor:
+    """
+    Perform lexicographical sort on a sequence of keys (tensors) along the specified dimension.
+    Args:
+        keys: Sequence of tensors to sort by
+        dim: Dimension to sort along
+    Returns:
+        Indices that would sort the input keys lexicographically
+    """
     if keys[0].is_cuda:
         return _torch_lexsort_cuda(keys, dim)
     else:
@@ -10,12 +18,14 @@ def torch_lexsort(keys, dim=-1):
         return torch.from_numpy(np.lexsort([k.numpy() for k in keys], axis=dim))
 
 
-def _torch_lexsort_cuda(keys, dim=-1):
+def _torch_lexsort_cuda(keys, dim: int = -1) -> torch.Tensor:
     """
-    Function calculates a lexicographical sort order on GPU, similar to np.lexsort
-    Relies heavily on undocumented behavior of torch.sort, namely that when sorting more than
-    2048 entries in the sorting dim, it performs a sort using Thrust and it uses a stable sort
-    https://github.com/pytorch/pytorch/blob/695fd981924bd805704ecb5ccd67de17c56d7308/aten/src/THC/generic/THCTensorSort.cu#L330
+    Lexicographical sort order on GPU, similar to np.lexsort, using stable sort for large tensors.
+    Args:
+        keys: Sequence of tensors to sort by
+        dim: Dimension to sort along
+    Returns:
+        Indices that would sort the input keys lexicographically
     """
 
     MIN_NUMEL_STABLE_SORT = 2049  # Minimum number of elements for stable sort
@@ -26,14 +36,22 @@ def _torch_lexsort_cuda(keys, dim=-1):
     d = keys[0].size(dim)  # Sort dimension size
     numel = flat_keys[0].numel()
     batch_size = numel // d
-    batch_key = torch.arange(batch_size, dtype=torch.int64, device=keys[0].device)[:, None].repeat(1, d).view(-1)
+    batch_key = (
+        torch.arange(batch_size, dtype=torch.int64, device=keys[0].device)[:, None]
+        .repeat(1, d)
+        .view(-1)
+    )
 
     flat_keys = flat_keys + (batch_key,)
 
     # We rely on undocumented behavior that the sort is stable provided that
     if numel < MIN_NUMEL_STABLE_SORT:
         n_rep = (MIN_NUMEL_STABLE_SORT + numel - 1) // numel  # Ceil
-        rep_key = torch.arange(n_rep, dtype=torch.int64, device=keys[0].device)[:, None].repeat(1, numel).view(-1)
+        rep_key = (
+            torch.arange(n_rep, dtype=torch.int64, device=keys[0].device)[:, None]
+            .repeat(1, numel)
+            .view(-1)
+        )
         flat_keys = tuple(k.repeat(n_rep) for k in flat_keys) + (rep_key,)
 
     idx = None  # Identity sorting initially
